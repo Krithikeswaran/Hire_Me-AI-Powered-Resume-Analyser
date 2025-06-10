@@ -1,32 +1,12 @@
 {
   "version": 2,
   "name": "hire-smart-ai-agent",
-  "builds": [
-    {
-      "src": "package.json",
-      "use": "@vercel/static-build",
-      "config": {
-        "distDir": "dist"
-      }
-    }
-  ],
+  "buildCommand": "npm run build",
+  "outputDirectory": "dist",
   "routes": [
     {
       "src": "/(.*)",
       "dest": "/index.html"
     }
-  ],
-  "env": {
-    "VITE_GEMINI_API_KEY": "@vite_gemini_api_key"
-  },
-  "build": {
-    "env": {
-      "VITE_GEMINI_API_KEY": "@vite_gemini_api_key"
-    }
-  },
-  "functions": {
-    "app/api/**/*.js": {
-      "runtime": "nodejs18.x"
-    }
-  }
+  ]
 }
