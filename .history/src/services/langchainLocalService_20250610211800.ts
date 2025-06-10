@@ -1388,7 +1388,6 @@ ${Object.entries(extractedInfo).map(([q, a]) => `${q}: ${a}`).join('\n')}
     return strengths.length > 0 ? strengths : ["Shows potential for the role"];
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private generateJobSpecificConcerns(skillsAnalysis: any, experienceMatch: number, educationMatch: number): string[] {
     const concerns = [];
 
@@ -1437,7 +1436,7 @@ function debugSkillMatching(resumeText: string, requiredSkills: string) {
 
   // Test the parsing
   const skillsList = requiredSkills.toLowerCase()
-    .split(/[,;|\n\r•·-]+/)
+    .split(/[,;|\n\r•·\-]+/)
     .map(s => s.trim())
     .filter(s => s.length > 1);
 
@@ -1460,7 +1459,6 @@ function debugSkillMatching(resumeText: string, requiredSkills: string) {
 }
 
 // Make debug function available globally for testing
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).debugSkillMatching = debugSkillMatching;
 
 // Export singleton instance

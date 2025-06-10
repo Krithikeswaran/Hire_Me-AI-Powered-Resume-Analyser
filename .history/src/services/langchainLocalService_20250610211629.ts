@@ -222,9 +222,14 @@ interface JobDescription {
   companyInfo: string;
 }
 
+interface ModelCollection {
+  sentimentAnalyzer?: (text: string) => Promise<Array<{ label: string; score: number }>>;
+  questionAnswering?: (params: { question: string; context: string }) => Promise<{ answer: string; score: number }>;
+  summarizer?: (text: string, options: { max_length: number; min_length: number; do_sample: boolean }) => Promise<Array<{ summary_text: string }>>;
+}
+
 class LangChainLocalAnalyzer {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  private models: any = {};
+  private models: ModelCollection = {};
   private embeddings: HuggingFaceTransformersEmbeddings | null = null;
   private textSplitter: RecursiveCharacterTextSplitter;
   private vectorStore: MemoryVectorStore | null = null;
@@ -298,7 +303,6 @@ class LangChainLocalAnalyzer {
         const textContent = await page.getTextContent();
         
         const pageText = textContent.items
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
           .map((item: any) => item.str)
           .join(' ');
         
@@ -578,7 +582,7 @@ ${Object.entries(extractedInfo).map(([q, a]) => `${q}: ${a}`).join('\n')}
     }
 
     // Split by common delimiters and clean up
-    const rawSkills = skillsText.split(/[,;|\n\r•·-]+/);
+    const rawSkills = skillsText.split(/[,;|\n\r•·\-]+/);
     console.log('After splitting:', rawSkills);
 
     const cleanedSkills = rawSkills
@@ -600,7 +604,7 @@ ${Object.entries(extractedInfo).map(([q, a]) => `${q}: ${a}`).join('\n')}
     // Normalize whitespace but keep most characters intact
     return resumeText
       .replace(/\s+/g, ' ') // Normalize whitespace
-      .replace(/[^\w\s.+#():-]/g, ' ') // Keep more characters including parentheses, colons, slashes
+      .replace(/[^\w\s\.\-\+#():\/]/g, ' ') // Keep more characters including parentheses, colons, slashes
       .toLowerCase()
       .trim();
   }
@@ -1344,7 +1348,6 @@ ${Object.entries(extractedInfo).map(([q, a]) => `${q}: ${a}`).join('\n')}
     return Math.min(95, score);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private generateJobSpecificStrengths(skillsAnalysis: any, experienceMatch: number, educationMatch: number, vectorSimilarity: number): string[] {
     const strengths = [];
 
@@ -1388,7 +1391,6 @@ ${Object.entries(extractedInfo).map(([q, a]) => `${q}: ${a}`).join('\n')}
     return strengths.length > 0 ? strengths : ["Shows potential for the role"];
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private generateJobSpecificConcerns(skillsAnalysis: any, experienceMatch: number, educationMatch: number): string[] {
     const concerns = [];
 
@@ -1437,7 +1439,7 @@ function debugSkillMatching(resumeText: string, requiredSkills: string) {
 
   // Test the parsing
   const skillsList = requiredSkills.toLowerCase()
-    .split(/[,;|\n\r•·-]+/)
+    .split(/[,;|\n\r•·\-]+/)
     .map(s => s.trim())
     .filter(s => s.length > 1);
 
@@ -1460,7 +1462,6 @@ function debugSkillMatching(resumeText: string, requiredSkills: string) {
 }
 
 // Make debug function available globally for testing
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).debugSkillMatching = debugSkillMatching;
 
 // Export singleton instance

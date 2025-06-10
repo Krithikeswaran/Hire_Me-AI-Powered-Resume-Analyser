@@ -1460,7 +1460,6 @@ function debugSkillMatching(resumeText: string, requiredSkills: string) {
 }
 
 // Make debug function available globally for testing
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 (window as any).debugSkillMatching = debugSkillMatching;
 
 // Export singleton instance
