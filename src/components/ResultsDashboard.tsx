@@ -4,47 +4,98 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
-import { 
-  Download, 
-  Crown, 
-  Star, 
-  TrendingUp, 
-  FileText, 
-  Mail, 
-  Phone, 
+import {
+  Download,
+  Crown,
+  Star,
+  TrendingUp,
+  FileText,
+  Mail,
+  Phone,
   MapPin,
   ChevronLeft,
   Award,
   AlertTriangle,
-  CheckCircle
+  CheckCircle,
+  Brain,
+  Users
 } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
+import { reportGenerationService } from "@/services/reportGenerationService";
 
 const ResultsDashboard = ({ results, jobDescription, onBack }) => {
   const [selectedCandidate, setSelectedCandidate] = useState(0);
 
+  // Debug logging
+  console.log('🔍 ResultsDashboard received results:', results);
+  console.log('🔍 ResultsDashboard received jobDescription:', jobDescription);
+
+  // Safety check for results
+  if (!results) {
+    console.error('❌ No results provided to ResultsDashboard');
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+        <div className="max-w-6xl mx-auto">
+          <Card>
+            <CardContent className="p-8 text-center">
+              <h2 className="text-2xl font-bold text-red-600 mb-4">No Results Available</h2>
+              <p className="text-gray-600 mb-4">No analysis results were provided.</p>
+              <Button onClick={onBack} variant="outline">
+                Go Back
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   // Handle both old and new result formats
   const isNewFormat = results.individualAnalyses && results.comparativeRanking;
+  console.log('🔍 Is new format:', isNewFormat);
+
   const candidates = isNewFormat
     ? results.individualAnalyses.sort((a, b) => b.overallScore - a.overallScore)
     : results.topCandidates || [];
 
+  console.log('🔍 Candidates found:', candidates?.length || 0);
+
+  if (!candidates || candidates.length === 0) {
+    console.error('❌ No candidates found in results');
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-blue-50 to-indigo-100 p-6">
+        <div className="max-w-6xl mx-auto">
+          <Card>
+            <CardContent className="p-8 text-center">
+              <h2 className="text-2xl font-bold text-yellow-600 mb-4">No Candidates Found</h2>
+              <p className="text-gray-600 mb-4">No candidate data was found in the analysis results.</p>
+              <Button onClick={onBack} variant="outline">
+                Go Back
+              </Button>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    );
+  }
+
   const summary = isNewFormat ? results.summary : results.summary;
 
-  const downloadReport = () => {
+  // Download overall batch report
+  const downloadBatchReport = () => {
     const reportData = {
       jobDescription,
       results,
       generatedAt: new Date().toISOString(),
       summary: summary,
-      analysisType: isNewFormat ? 'Comparative Batch Analysis' : 'Individual Analysis',
+      analysisType: isNewFormat ? 'Enhanced 4-Agent Batch Analysis' : 'Individual Analysis',
       comparativeRanking: isNewFormat ? results.comparativeRanking : null
     };
 
     const blob = new Blob([JSON.stringify(reportData, null, 2)], {
       type: 'application/json'
     });
-    
+
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
@@ -55,9 +106,55 @@ const ResultsDashboard = ({ results, jobDescription, onBack }) => {
     URL.revokeObjectURL(url);
 
     toast({
-      title: "Report Downloaded",
-      description: "Analysis report has been downloaded successfully.",
+      title: "Batch Report Downloaded",
+      description: "Complete batch analysis report has been downloaded successfully.",
     });
+  };
+
+  // Download individual candidate HTML report
+  const downloadCandidateHTMLReport = (candidate) => {
+    if (candidate.detailedReport) {
+      reportGenerationService.downloadHTMLReport(candidate.detailedReport);
+      toast({
+        title: "Individual Report Downloaded",
+        description: `Detailed HTML report for ${candidate.detailedReport.candidateInfo.name} has been downloaded.`,
+      });
+    } else {
+      // Generate report on the fly if not available
+      const detailedReport = reportGenerationService.generateCandidateReport(
+        candidate,
+        jobDescription,
+        candidate.fileName
+      );
+      reportGenerationService.downloadHTMLReport(detailedReport);
+      toast({
+        title: "Individual Report Downloaded",
+        description: `Detailed HTML report for ${candidate.fileName} has been downloaded.`,
+      });
+    }
+  };
+
+  // Download individual candidate JSON data
+  const downloadCandidateJSONReport = (candidate) => {
+    if (candidate.detailedReport) {
+      reportGenerationService.downloadJSONReport(candidate.detailedReport);
+      toast({
+        title: "Individual Data Downloaded",
+        description: `Detailed JSON data for ${candidate.detailedReport.candidateInfo.name} has been downloaded.`,
+      });
+    } else {
+      // Generate report on the fly if not available
+      const detailedReport = reportGenerationService.generateCandidateReport(
+        candidate,
+        jobDescription,
+        candidate.fileName
+      );
+      reportGenerationService.downloadJSONReport(detailedReport);
+      toast({
+        title: "Individual Data Downloaded",
+        description: `Detailed JSON data for ${candidate.fileName} has been downloaded.`,
+      });
+    }
   };
 
   const getScoreColor = (score) => {
@@ -95,14 +192,16 @@ const ResultsDashboard = ({ results, jobDescription, onBack }) => {
                 {isNewFormat ? 'AI-powered comparative ranking' : 'AI-powered analysis'} of {totalAnalyzed} candidates completed in {summary.processingTime}ms
               </p>
             </div>
-            <Button 
-              onClick={downloadReport}
-              variant="secondary"
-              className="gap-2"
-            >
-              <Download className="w-4 h-4" />
-              Download Report
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                onClick={downloadBatchReport}
+                variant="secondary"
+                className="gap-2"
+              >
+                <Download className="w-4 h-4" />
+                Download Batch Report
+              </Button>
+            </div>
           </div>
         </CardHeader>
       </Card>
@@ -222,8 +321,28 @@ const ResultsDashboard = ({ results, jobDescription, onBack }) => {
                      candidate.overallScore >= 75 ? 'Recommended' :
                      candidate.overallScore >= 65 ? 'Consider' : 'Not Recommended')}
                   </p>
+                  <div className="flex gap-2 mt-3">
+                    <Button
+                      onClick={() => downloadCandidateHTMLReport(candidate)}
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                    >
+                      <FileText className="w-4 h-4" />
+                      Download Report
+                    </Button>
+                    <Button
+                      onClick={() => downloadCandidateJSONReport(candidate)}
+                      variant="outline"
+                      size="sm"
+                      className="gap-2"
+                    >
+                      <Download className="w-4 h-4" />
+                      Download Data
+                    </Button>
+                  </div>
                 </div>
-                <Badge 
+                <Badge
                   variant={candidate.overallScore >= 90 ? "default" : "secondary"}
                   className="text-lg px-3 py-1"
                 >
@@ -232,7 +351,103 @@ const ResultsDashboard = ({ results, jobDescription, onBack }) => {
               </div>
             </CardHeader>
             <CardContent className="space-y-6">
-              {/* Score Breakdown */}
+              {/* Analysis Workflow Status */}
+              <div className="bg-gradient-to-r from-green-50 to-blue-50 border border-green-200 rounded-lg p-3">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <CheckCircle className="w-5 h-5 text-green-600" />
+                    <span className="font-medium text-green-800">
+                      Enhanced 4-Agent Analysis Complete
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse"></div>
+                    <span className="text-xs text-green-600">
+                      {summary?.analysisMethod || 'AI-Powered Analysis'}
+                    </span>
+                  </div>
+                </div>
+                <div className="mt-2 text-xs text-green-700">
+                  Processed by: {summary?.agentsUsed?.join(' • ') || 'Skills Analyzer • Experience Evaluator • Education Assessor • Technical Fit Agent'}
+                </div>
+              </div>
+              {/* 4-Agent Analysis Breakdown */}
+              <div className="bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-200 rounded-lg p-4">
+                <h3 className="text-lg font-semibold text-blue-800 mb-4 flex items-center gap-2">
+                  <Brain className="w-5 h-5" />
+                  4-Agent Analysis Breakdown
+                </h3>
+                <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-4">
+                  {/* Agent 1: Skills Analyzer */}
+                  <div className="bg-white rounded-lg p-3 border border-blue-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-2 h-2 bg-blue-500 rounded-full"></div>
+                      <span className="text-sm font-medium text-gray-700">Skills Analyzer</span>
+                    </div>
+                    <div className="text-2xl font-bold text-blue-600 mb-1">
+                      {candidate.skillsMatch}%
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      {candidate.keywordMatches?.length || 0} skills matched
+                    </div>
+                    <Progress value={candidate.skillsMatch} className="h-1 mt-2" />
+                  </div>
+
+                  {/* Agent 2: Experience Evaluator */}
+                  <div className="bg-white rounded-lg p-3 border border-green-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-2 h-2 bg-green-500 rounded-full"></div>
+                      <span className="text-sm font-medium text-gray-700">Experience Evaluator</span>
+                    </div>
+                    <div className="text-2xl font-bold text-green-600 mb-1">
+                      {candidate.experienceMatch}%
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Work & project analysis
+                    </div>
+                    <Progress value={candidate.experienceMatch} className="h-1 mt-2" />
+                  </div>
+
+                  {/* Agent 3: Education Assessor */}
+                  <div className="bg-white rounded-lg p-3 border border-purple-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-2 h-2 bg-purple-500 rounded-full"></div>
+                      <span className="text-sm font-medium text-gray-700">Education Assessor</span>
+                    </div>
+                    <div className="text-2xl font-bold text-purple-600 mb-1">
+                      {candidate.educationMatch}%
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Qualifications & background
+                    </div>
+                    <Progress value={candidate.educationMatch} className="h-1 mt-2" />
+                  </div>
+
+                  {/* Agent 4: Technical Fit */}
+                  <div className="bg-white rounded-lg p-3 border border-orange-100">
+                    <div className="flex items-center gap-2 mb-2">
+                      <div className="w-2 h-2 bg-orange-500 rounded-full"></div>
+                      <span className="text-sm font-medium text-gray-700">Technical Fit Agent</span>
+                    </div>
+                    <div className="text-2xl font-bold text-orange-600 mb-1">
+                      {candidate.technicalFit}%
+                    </div>
+                    <div className="text-xs text-gray-500">
+                      Technical capabilities
+                    </div>
+                    <Progress value={candidate.technicalFit} className="h-1 mt-2" />
+                  </div>
+                </div>
+
+                {/* Analysis Method Indicator */}
+                <div className="mt-3 text-center">
+                  <Badge variant="outline" className="text-xs">
+                    {candidate.detailedReport?.overallAssessment?.summary || 'Enhanced AI Analysis'}
+                  </Badge>
+                </div>
+              </div>
+
+              {/* Traditional Score Breakdown */}
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-3">
                   <div>
@@ -286,6 +501,123 @@ const ResultsDashboard = ({ results, jobDescription, onBack }) => {
                   AI Insights
                 </h4>
                 <p className="text-blue-700 text-sm">{candidate.aiInsights}</p>
+              </div>
+
+              {/* Detailed Agent Analysis */}
+              <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                <h4 className="font-semibold text-gray-800 mb-4 flex items-center gap-2">
+                  <Users className="w-4 h-4" />
+                  Detailed Agent Analysis
+                </h4>
+                <div className="grid md:grid-cols-2 gap-4">
+                  {/* Skills Analysis Details */}
+                  <div className="bg-white rounded-lg p-3 border-l-4 border-blue-500">
+                    <h5 className="font-medium text-blue-700 mb-2">🎯 Skills Analyzer Agent</h5>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="font-medium">Matched Skills:</span>
+                        <div className="flex flex-wrap gap-1 mt-1">
+                          {candidate.keywordMatches?.slice(0, 5).map((skill, idx) => (
+                            <Badge key={idx} variant="secondary" className="text-xs bg-green-100 text-green-700">
+                              {skill}
+                            </Badge>
+                          )) || <span className="text-gray-500">No specific matches found</span>}
+                        </div>
+                      </div>
+                      {candidate.missingSkills?.length > 0 && (
+                        <div>
+                          <span className="font-medium">Missing Skills:</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {candidate.missingSkills.slice(0, 3).map((skill, idx) => (
+                              <Badge key={idx} variant="outline" className="text-xs text-red-600 border-red-200">
+                                {skill}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Experience Analysis Details */}
+                  <div className="bg-white rounded-lg p-3 border-l-4 border-green-500">
+                    <h5 className="font-medium text-green-700 mb-2">💼 Experience Evaluator Agent</h5>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="font-medium">Experience Level:</span>
+                        <span className="ml-2 text-gray-600">
+                          {candidate.experienceMatch >= 80 ? 'Excellent match' :
+                           candidate.experienceMatch >= 60 ? 'Good experience' :
+                           'Entry level / Limited experience'}
+                        </span>
+                      </div>
+                      {candidate.experienceGaps?.length > 0 && (
+                        <div>
+                          <span className="font-medium">Areas for Growth:</span>
+                          <ul className="ml-4 mt-1 text-gray-600">
+                            {candidate.experienceGaps.slice(0, 2).map((gap, idx) => (
+                              <li key={idx} className="text-xs">• {gap}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Education Analysis Details */}
+                  <div className="bg-white rounded-lg p-3 border-l-4 border-purple-500">
+                    <h5 className="font-medium text-purple-700 mb-2">🎓 Education Assessor Agent</h5>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="font-medium">Education Fit:</span>
+                        <span className="ml-2 text-gray-600">
+                          {candidate.educationMatch >= 80 ? 'Highly relevant degree' :
+                           candidate.educationMatch >= 60 ? 'Good educational background' :
+                           'Basic qualifications met'}
+                        </span>
+                      </div>
+                      {candidate.candidateProfile?.certifications?.length > 0 && (
+                        <div>
+                          <span className="font-medium">Certifications:</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {candidate.candidateProfile.certifications.slice(0, 3).map((cert, idx) => (
+                              <Badge key={idx} variant="outline" className="text-xs">
+                                {cert}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Technical Fit Details */}
+                  <div className="bg-white rounded-lg p-3 border-l-4 border-orange-500">
+                    <h5 className="font-medium text-orange-700 mb-2">⚙️ Technical Fit Agent</h5>
+                    <div className="space-y-2 text-sm">
+                      <div>
+                        <span className="font-medium">Technical Capability:</span>
+                        <span className="ml-2 text-gray-600">
+                          {candidate.technicalFit >= 80 ? 'Strong technical skills' :
+                           candidate.technicalFit >= 60 ? 'Good technical foundation' :
+                           'Developing technical skills'}
+                        </span>
+                      </div>
+                      {candidate.candidateProfile?.technicalSkills?.languages?.length > 0 && (
+                        <div>
+                          <span className="font-medium">Programming Languages:</span>
+                          <div className="flex flex-wrap gap-1 mt-1">
+                            {candidate.candidateProfile.technicalSkills.languages.slice(0, 4).map((lang, idx) => (
+                              <Badge key={idx} variant="secondary" className="text-xs bg-orange-100 text-orange-700">
+                                {lang}
+                              </Badge>
+                            ))}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* Strengths */}
@@ -349,8 +681,8 @@ const ResultsDashboard = ({ results, jobDescription, onBack }) => {
           <ChevronLeft className="w-4 h-4" />
           Back to Processing
         </Button>
-        <Button 
-          onClick={downloadReport}
+        <Button
+          onClick={downloadBatchReport}
           className="gap-2 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700"
         >
           <Download className="w-4 h-4" />

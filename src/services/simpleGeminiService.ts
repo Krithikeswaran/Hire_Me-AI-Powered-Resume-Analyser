@@ -369,31 +369,167 @@ class SimpleGeminiAnalyzer {
     return 0;
   }
 
-  // Simple Gemini API call
-  private async callGemini(prompt: string): Promise<string> {
-    try {
-      const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${this.apiKey}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          contents: [{ parts: [{ text: prompt }] }],
-          generationConfig: {
-            temperature: 0.1,
-            topK: 40,
-            topP: 0.95,
-            maxOutputTokens: 2048,
-          }
-        })
-      });
+  // Enhanced Gemini API call with better error handling and retry logic
+  private async callGemini(prompt: string, retries: number = 2): Promise<string> {
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        console.log(`🌟 Gemini API call attempt ${attempt + 1}/${retries + 1}`);
 
-      if (!response.ok) {
-        throw new Error(`API error: ${response.status}`);
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-pro-latest:generateContent?key=${this.apiKey}`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'User-Agent': 'Resume-Analyzer/1.0'
+          },
+          body: JSON.stringify({
+            contents: [{ parts: [{ text: prompt }] }],
+            generationConfig: {
+              temperature: 0.1,
+              topK: 40,
+              topP: 0.95,
+              maxOutputTokens: 4096,
+              candidateCount: 1
+            },
+            safetySettings: [
+              {
+                category: "HARM_CATEGORY_HARASSMENT",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
+              },
+              {
+                category: "HARM_CATEGORY_HATE_SPEECH",
+                threshold: "BLOCK_MEDIUM_AND_ABOVE"
+              }
+            ]
+          })
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(`API error ${response.status}: ${errorText}`);
+        }
+
+        const data = await response.json();
+        const result = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+        if (!result) {
+          throw new Error('Empty response from Gemini API');
+        }
+
+        console.log('✅ Gemini API call successful');
+        return result;
+
+      } catch (error) {
+        console.error(`❌ Gemini API attempt ${attempt + 1} failed:`, error);
+
+        if (attempt === retries) {
+          throw new Error(`Gemini API failed after ${retries + 1} attempts: ${error.message}`);
+        }
+
+        // Wait before retry (exponential backoff)
+        await new Promise(resolve => setTimeout(resolve, Math.pow(2, attempt) * 1000));
+      }
+    }
+
+    throw new Error('Unexpected error in Gemini API call');
+  }
+
+  // Enhanced structured information extraction using Gemini
+  async extractStructuredInfo(resumeText: string, jobDescription: JobDescription): Promise<{
+    personalInfo: any;
+    technicalSkills: any;
+    experience: any[];
+    education: any[];
+    projects: any[];
+    certifications: string[];
+    keyInsights: string[];
+  }> {
+    if (!this.isAvailable()) {
+      throw new Error('Gemini API not available');
+    }
+
+    const prompt = `You are an expert resume parser. Extract structured information from this resume with high accuracy.
+
+RESUME TEXT:
+${resumeText}
+
+JOB CONTEXT:
+Position: ${jobDescription.jobTitle}
+Required Skills: ${Array.isArray(jobDescription.requiredSkills) ? jobDescription.requiredSkills.join(', ') : jobDescription.requiredSkills}
+
+Extract the following information and return ONLY valid JSON:
+
+{
+  "personalInfo": {
+    "name": "Full name",
+    "email": "email@domain.com",
+    "phone": "phone number",
+    "location": "city, state/country",
+    "linkedin": "linkedin profile if mentioned",
+    "github": "github profile if mentioned"
+  },
+  "technicalSkills": {
+    "programmingLanguages": ["list of programming languages"],
+    "frameworks": ["web frameworks, libraries"],
+    "databases": ["database technologies"],
+    "tools": ["development tools, IDEs"],
+    "cloudPlatforms": ["AWS, Azure, GCP, etc."],
+    "other": ["other technical skills"]
+  },
+  "experience": [
+    {
+      "title": "Job title",
+      "company": "Company name",
+      "duration": "Start - End dates",
+      "description": "Brief description of role",
+      "keyAchievements": ["achievement 1", "achievement 2"],
+      "technologiesUsed": ["tech1", "tech2"]
+    }
+  ],
+  "education": [
+    {
+      "degree": "Degree type",
+      "field": "Field of study",
+      "institution": "University/College name",
+      "year": "Graduation year",
+      "gpa": "GPA if mentioned",
+      "relevantCoursework": ["course1", "course2"]
+    }
+  ],
+  "projects": [
+    {
+      "name": "Project name",
+      "description": "Project description",
+      "technologies": ["tech1", "tech2"],
+      "duration": "Project duration",
+      "keyFeatures": ["feature1", "feature2"],
+      "githubLink": "link if available"
+    }
+  ],
+  "certifications": ["certification1", "certification2"],
+  "keyInsights": [
+    "insight about candidate's strengths",
+    "insight about experience level",
+    "insight about technical expertise"
+  ]
+}
+
+IMPORTANT: Return ONLY the JSON object, no additional text or formatting.`;
+
+    try {
+      const result = await this.callGemini(prompt);
+
+      // Extract JSON from response
+      const jsonMatch = result.match(/\{[\s\S]*\}/);
+      if (!jsonMatch) {
+        throw new Error('No valid JSON found in Gemini response');
       }
 
-      const data = await response.json();
-      return data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+      const structuredData = JSON.parse(jsonMatch[0]);
+      console.log('✅ Successfully extracted structured information from resume');
+      return structuredData;
+
     } catch (error) {
-      console.error('Gemini API error:', error);
+      console.error('❌ Failed to extract structured info:', error);
       throw error;
     }
   }
@@ -738,10 +874,10 @@ Return ONLY valid JSON in this exact format:
     }
   }
 
-  // Analyze resume with Gemini or fallback
+  // Enhanced resume analysis with structured information extraction
   async analyzeResume(resumeText: string, jobDescription: JobDescription, fileName?: string): Promise<ResumeAnalysis> {
     try {
-      console.log('🌟 Starting Gemini-enhanced analysis...');
+      console.log('🌟 Starting enhanced Gemini analysis...');
       console.log('🔍 === JOB DESCRIPTION DEBUG ===');
       console.log('Job Title:', jobDescription.jobTitle);
       console.log('Required Skills (raw):', jobDescription.requiredSkills);
@@ -756,64 +892,114 @@ Return ONLY valid JSON in this exact format:
       const skillsMatch = this.calculateSkillsMatch(resumeText, jobDescription.requiredSkills);
 
       if (this.isAvailable()) {
-        // Try Gemini analysis
         try {
-          const prompt = `Analyze this resume for a ${jobDescription.jobTitle} position. 
+          // First, extract structured information
+          console.log('📊 Extracting structured information...');
+          const structuredInfo = await this.extractStructuredInfo(resumeText, jobDescription);
+
+          // Update candidate profile with extracted info
+          candidateProfile.personalInfo = { ...candidateProfile.personalInfo, ...structuredInfo.personalInfo };
+          candidateProfile.technicalSkills = { ...candidateProfile.technicalSkills, ...structuredInfo.technicalSkills };
+          candidateProfile.experience = structuredInfo.experience.length > 0 ? structuredInfo.experience : candidateProfile.experience;
+          candidateProfile.education = structuredInfo.education.length > 0 ? structuredInfo.education : candidateProfile.education;
+          candidateProfile.projects = structuredInfo.projects.length > 0 ? structuredInfo.projects : candidateProfile.projects;
+          candidateProfile.certifications = structuredInfo.certifications.length > 0 ? structuredInfo.certifications : candidateProfile.certifications;
+
+          // Now perform detailed analysis
+          console.log('🎯 Performing detailed analysis...');
+          const analysisPrompt = `You are a senior technical recruiter analyzing a candidate for a ${jobDescription.jobTitle} position.
+
+CANDIDATE PROFILE:
+Name: ${structuredInfo.personalInfo.name || 'Not specified'}
+Email: ${structuredInfo.personalInfo.email || 'Not specified'}
+Location: ${structuredInfo.personalInfo.location || 'Not specified'}
+
+TECHNICAL SKILLS:
+- Programming Languages: ${structuredInfo.technicalSkills.programmingLanguages?.join(', ') || 'None listed'}
+- Frameworks: ${structuredInfo.technicalSkills.frameworks?.join(', ') || 'None listed'}
+- Databases: ${structuredInfo.technicalSkills.databases?.join(', ') || 'None listed'}
+- Tools: ${structuredInfo.technicalSkills.tools?.join(', ') || 'None listed'}
+- Cloud: ${structuredInfo.technicalSkills.cloudPlatforms?.join(', ') || 'None listed'}
+
+EXPERIENCE:
+${structuredInfo.experience.map(exp => `- ${exp.title} at ${exp.company} (${exp.duration})\n  Achievements: ${exp.keyAchievements?.join(', ') || 'None listed'}`).join('\n') || 'No formal experience listed'}
+
+EDUCATION:
+${structuredInfo.education.map(edu => `- ${edu.degree} in ${edu.field} from ${edu.institution} (${edu.year})`).join('\n') || 'Not specified'}
+
+PROJECTS:
+${structuredInfo.projects.map(proj => `- ${proj.name}: ${proj.description}\n  Technologies: ${proj.technologies?.join(', ') || 'None listed'}`).join('\n') || 'No projects listed'}
+
+CERTIFICATIONS: ${structuredInfo.certifications.join(', ') || 'None listed'}
 
 JOB REQUIREMENTS:
 - Position: ${jobDescription.jobTitle}
-- Required Skills: ${jobDescription.requiredSkills?.join(', ') || 'Not specified'}
-- Preferred Skills: ${jobDescription.preferredSkills?.join(', ') || 'Not specified'}
+- Required Skills: ${Array.isArray(jobDescription.requiredSkills) ? jobDescription.requiredSkills.join(', ') : jobDescription.requiredSkills}
 - Experience: ${jobDescription.minExperience}-${jobDescription.maxExperience} years
 - Education: ${jobDescription.education}
 
-RESUME:
-${resumeText.substring(0, 4000)}
+ANALYSIS CRITERIA:
+1. Skills Match: ${skillsMatch}% (already calculated)
+2. Experience Relevance: Rate 0-100 based on work experience and projects
+3. Education Alignment: Rate 0-100 based on degree relevance
+4. Technical Fit: Rate 0-100 based on overall technical capability
+5. Communication: Rate 0-100 based on resume clarity and presentation
+6. Leadership Potential: Rate 0-100 based on leadership indicators
 
-Provide scores (0-100) and analysis. Focus on:
-1. How well skills match (already calculated: ${skillsMatch}%)
-2. Experience relevance (consider projects for students)
-3. Education alignment
-4. Technical fit for the role
-
-Return JSON format:
+Provide detailed analysis in JSON format:
 {
   "experienceMatch": number,
-  "educationMatch": number, 
+  "educationMatch": number,
   "technicalFit": number,
-  "strengths": ["strength1", "strength2"],
-  "weaknesses": ["weakness1", "weakness2"],
-  "recommendations": ["rec1", "rec2"],
-  "aiInsights": "Brief analysis"
-}`;
+  "communicationScore": number,
+  "leadershipPotential": number,
+  "culturalFit": number,
+  "strengths": ["specific strength 1", "specific strength 2", "specific strength 3"],
+  "weaknesses": ["specific weakness 1", "specific weakness 2"],
+  "recommendations": ["actionable recommendation 1", "actionable recommendation 2"],
+  "aiInsights": "Comprehensive 2-3 sentence analysis of the candidate's fit for this role",
+  "keyHighlights": ["highlight 1", "highlight 2", "highlight 3"],
+  "improvementAreas": ["area 1", "area 2"]
+}
 
-          const result = await this.callGemini(prompt);
-          const jsonMatch = result.match(/\{[\s\S]*\}/);
-          
+Return ONLY the JSON object.`;
+
+          const analysisResult = await this.callGemini(analysisPrompt);
+          const jsonMatch = analysisResult.match(/\{[\s\S]*\}/);
+
           if (jsonMatch) {
             const parsed = JSON.parse(jsonMatch[0]);
-            
+
+            const overallScore = Math.round((
+              skillsMatch * 0.35 +
+              parsed.experienceMatch * 0.25 +
+              parsed.technicalFit * 0.20 +
+              parsed.educationMatch * 0.10 +
+              parsed.communicationScore * 0.05 +
+              parsed.leadershipPotential * 0.05
+            ));
+
             return {
-              overallScore: Math.round((skillsMatch * 0.4 + parsed.experienceMatch * 0.3 + parsed.technicalFit * 0.2 + parsed.educationMatch * 0.1)),
+              overallScore,
               skillsMatch,
               experienceMatch: parsed.experienceMatch || 70,
               educationMatch: parsed.educationMatch || 75,
               technicalFit: parsed.technicalFit || 70,
-              culturalFit: 75,
-              communicationScore: 80,
-              leadershipPotential: 70,
-              aiInsights: parsed.aiInsights || `Analysis for ${jobDescription.jobTitle} position completed.`,
+              culturalFit: parsed.culturalFit || 75,
+              communicationScore: parsed.communicationScore || 80,
+              leadershipPotential: parsed.leadershipPotential || 70,
+              aiInsights: parsed.aiInsights || `Comprehensive analysis for ${jobDescription.jobTitle} position completed using Gemini AI.`,
               strengths: parsed.strengths || ["Relevant technical skills", "Good educational background"],
               weaknesses: parsed.weaknesses || ["Some skill gaps identified"],
               recommendations: parsed.recommendations || ["Consider for interview", "Assess technical skills"],
               keywordMatches: this.findMatchedSkills(resumeText, jobDescription.requiredSkills),
               missingSkills: this.findMissingSkills(resumeText, jobDescription.requiredSkills),
-              experienceGaps: ["Leadership experience", "Industry-specific experience"],
+              experienceGaps: parsed.improvementAreas || ["Leadership experience", "Industry-specific experience"],
               candidateProfile
             };
           }
         } catch (geminiError) {
-          console.warn('Gemini failed, using enhanced fallback:', geminiError);
+          console.warn('Gemini analysis failed, using enhanced fallback:', geminiError);
         }
       }
 

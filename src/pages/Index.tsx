@@ -1,13 +1,15 @@
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Upload, FileText, Brain, Users, ChevronRight, Download, Sparkles } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
+import { Upload, FileText, Brain, Users, ChevronRight, Download, Sparkles, CheckCircle, AlertCircle } from "lucide-react";
 import { toast } from "@/hooks/use-toast";
 import ResumeUpload from "@/components/ResumeUpload";
 import JobDescriptionForm from "@/components/JobDescriptionForm";
 import AgentProcessor from "@/components/AgentProcessor";
 import ResultsDashboard from "@/components/ResultsDashboard";
+import { systemIntegrationService } from "@/services/systemIntegrationService";
 
 const Index = () => {
   const [currentStep, setCurrentStep] = useState(1);
@@ -15,6 +17,21 @@ const Index = () => {
   const [jobDescription, setJobDescription] = useState(null);
   const [processingResults, setProcessingResults] = useState(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [systemStatus, setSystemStatus] = useState(null);
+
+  // Load system status on component mount
+  useEffect(() => {
+    const loadSystemStatus = async () => {
+      try {
+        const status = systemIntegrationService.getSystemStatus();
+        setSystemStatus(status);
+      } catch (error) {
+        console.error('Failed to load system status:', error);
+      }
+    };
+
+    loadSystemStatus();
+  }, []);
 
   const steps = [
     { id: 1, title: "Upload Resumes", icon: Upload },
@@ -41,13 +58,27 @@ const Index = () => {
   };
 
   const handleProcessingComplete = (results) => {
+    console.log('🎉 Processing complete! Results received:', results);
+    console.log('🔍 Results type:', typeof results);
+    console.log('🔍 Results keys:', results ? Object.keys(results) : 'No results');
+
     setProcessingResults(results);
     setCurrentStep(4);
     setIsProcessing(false);
-    toast({
-      title: "Analysis Complete",
-      description: "Top candidates identified successfully!",
-    });
+
+    if (results && (results.individualAnalyses || results.topCandidates)) {
+      toast({
+        title: "Analysis Complete",
+        description: "Top candidates identified successfully!",
+      });
+    } else {
+      console.warn('⚠️ Results may be incomplete or invalid');
+      toast({
+        title: "Analysis Complete",
+        description: "Analysis completed, but results may be limited.",
+        variant: "destructive"
+      });
+    }
   };
 
   const resetProcess = () => {
@@ -72,15 +103,35 @@ const Index = () => {
                 <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent">
                   Hire Me
                 </h1>
-                <p className="text-sm text-muted-foreground">AI Powered Resume Analyser</p>
+                <p className="text-sm text-muted-foreground">Enhanced AI-Powered Resume Analyser</p>
               </div>
             </div>
-            {processingResults && (
-              <Button onClick={resetProcess} variant="outline" className="gap-2">
-                <Upload className="w-4 h-4" />
-                New Analysis
-              </Button>
-            )}
+
+            <div className="flex items-center gap-3">
+              {/* System Status Indicator */}
+              {systemStatus && (
+                <div className="flex items-center gap-2">
+                  <Badge
+                    variant={systemStatus.geminiAvailable ? "default" : "secondary"}
+                    className="gap-1"
+                  >
+                    {systemStatus.geminiAvailable ? (
+                      <CheckCircle className="w-3 h-3" />
+                    ) : (
+                      <AlertCircle className="w-3 h-3" />
+                    )}
+                    {systemStatus.recommendedWorkflow}
+                  </Badge>
+                </div>
+              )}
+
+              {processingResults && (
+                <Button onClick={resetProcess} variant="outline" className="gap-2">
+                  <Upload className="w-4 h-4" />
+                  New Analysis
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </header>
@@ -142,12 +193,26 @@ const Index = () => {
             />
           )}
 
-          {currentStep === 4 && processingResults && (
+          {(() => {
+            console.log('🔍 Render check - currentStep:', currentStep, 'processingResults:', !!processingResults);
+            console.log('🔍 Should show results?', currentStep === 4 && processingResults);
+            return currentStep === 4 && processingResults;
+          })() && (
             <ResultsDashboard
               results={processingResults}
               jobDescription={jobDescription}
               onBack={() => setCurrentStep(3)}
             />
+          )}
+
+          {currentStep === 4 && !processingResults && (
+            <div className="text-center p-8">
+              <h2 className="text-xl font-bold text-red-600 mb-4">No Results Available</h2>
+              <p className="text-gray-600 mb-4">Processing completed but no results were generated.</p>
+              <Button onClick={() => setCurrentStep(1)} variant="outline">
+                Start Over
+              </Button>
+            </div>
           )}
         </div>
       </div>
